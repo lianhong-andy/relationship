@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>亲戚关系 - 电子族谱系统</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/element-plus@2.4.4/dist/index.css">
+  <script src="https://unpkg.com/element-plus@2.4.4/dist/index.full.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; }
+    
+    .app-container { min-height: 100vh; display: flex; flex-direction: column; }
+    
+    /* 头部样式 */
+    .page-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      box-shadow: 0 2px 12px rgba(102, 126, 234, 0.3);
+    }
+    
+    .logo { display: flex; align-items: center; gap: 12px; font-size: 20px; font-weight: 600; }
+    .logo svg { width: 36px; height: 36px; }
+    
+    .tips { flex: 1; text-align: center; color: rgba(255,255,255,0.85); font-size: 13px; }
+    
+    .nav { display: flex; gap: 8px; }
+    .nav a { color: rgba(255,255,255,0.8); text-decoration: none; padding: 8px 16px; border-radius: 20px; transition: all 0.3s; }
+    .nav a:hover, .nav a.active { background: rgba(255,255,255,0.2); color: white; }
+    
+    .actions { display: flex; gap: 12px; }
+    .btn { padding: 10px 20px; border-radius: 25px; border: none; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.3s; }
+    .btn-primary { background: white; color: #667eea; }
+    .btn-primary:hover { background: #f0f0f0; transform: translateY(-1px); }
+    .btn-secondary { background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); }
+    .btn-secondary:hover { background: rgba(255,255,255,0.3); }
+    .btn-danger { background: #ff4757; color: white; }
+    .btn-danger:hover { background: #ff3344; }
+    
+    /* 主内容区 */
+    .page-content { flex: 1; display: flex; position: relative; overflow: hidden; }
+    
+    /* 图表区域 */
+    .graph-container { flex: 1; position: relative; }
+    #graph-svg { width: 100%; height: 100%; background: radial-gradient(circle at center, #f8f9ff 0%, #eef1f8 100%); }
+    
+    .graph-node circle { stroke: white; stroke-width: 3px; cursor: pointer; transition: all 0.3s; }
+    .graph-node.male circle { fill: #87CEEB; }
+    .graph-node.female circle { fill: #FFB6C1; }
+    .graph-node.unknown circle { fill: #D3D3D3; }
+    .graph-node.deceased circle { fill: #A9A9A9; }
+    .graph-node circle:hover { transform: scale(1.1); filter: brightness(1.1); }
+    .graph-node text { fill: #333; font-size: 12px; font-weight: 500; pointer-events: none; }
+    .relationship-link { stroke: #999; stroke-width: 2px; }
+    .relationship-label { fill: #666; font-size: 11px; background: white; }
+    
+    /* 工具栏 */
+    .graph-toolbar {
+      position: absolute; top: 16px; left: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 10;
+    }
+    .toolbar-btn { width: 40px; height: 40px; border-radius: 8px; border: none; background: white; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: all 0.2s; }
+    .toolbar-btn:hover { transform: scale(1.05); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .toolbar-btn svg { width: 20px; height: 20px; color: #667eea; }
+    
+    /* 侧边面板 */
+    .side-panel {
+      width: 360px; background: white; border-left: 1px solid #e8e8e8; display: flex; flex-direction: column; overflow: hidden;
+    }
+    
+    .panel-header { padding: 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+    .panel-header h3 { font-size: 16px; color: #333; }
+    .panel-close { width: 32px; height: 32px; border: none; background: transparent; cursor: pointer; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+    .panel-close:hover { background: #f5f5f5; }
+    
+    .panel-content { flex: 1; overflow-y: auto; padding: 20px; }
+    
+    /* 成员详情 */
+    .member-avatar { width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 32px; margin: 0 auto 16px; }
+    .member-avatar.male { background: #87CEEB; }
+    .member-avatar.female { background: #FFB6C1; }
+    .member-avatar.unknown { background: #D3D3D3; }
+    .member-name { text-align: center; font-size: 20px; font-weight: 600; margin-bottom: 8px; }
+    .member-info { display: grid; grid-template-columns: 80px 1fr; gap: 12px; font-size: 14px; }
+    .member-info dt { color: #888; }
+    .member-info dd { color: #333; }
+    .member-relations { margin-top: 24px; }
+    .member-relations h4 { font-size: 14px; color: #666; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #eee; }
+    .relation-item { display: flex; align-items: center; gap: 12px; padding: 10px; background: #f8f9ff; border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s; }
+    .relation-item:hover { background: #f0f2ff; transform: translateX(4px); }
+    .relation-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; color: white; }
+    .relation-avatar.male { background: #87CEEB; }
+    .relation-avatar.female { background: #FFB6C1; }
+    .relation-info { flex: 1; }
+    .relation-name { font-weight: 500; font-size: 14px; }
+    .relation-type { font-size: 12px; color: #888; }
+    
+    /* 成员列表 */
+    .members-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+    .member-card { background: #f8f9ff; border-radius: 12px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.2s; border: 2px solid transparent; }
+    .member-card:hover { border-color: #667eea; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(102,126,234,0.15); }
+    .member-card .avatar { width: 56px; height: 56px; border-radius: 50%; margin: 0 auto 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; color: white; }
+    .member-card .name { font-weight: 500; font-size: 14px; margin-bottom: 4px; }
+    .member-card .meta { font-size: 12px; color: #888; }
+    
+    /* 表单样式 */
+    .form-item { margin-bottom: 20px; }
+    .form-label { display: block; font-size: 14px; color: #666; margin-bottom: 8px; }
+    .form-input { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; transition: all 0.2s; }
+    .form-input:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,0.1); }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .radio-group { display: flex; gap: 16px; }
+    .radio-item { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    
+    /* 空状态 */
+    .empty-state { text-align: center; padding: 60px 20px; color: #888; }
+    .empty-state svg { width: 80px; height: 80px; margin-bottom: 16px; opacity: 0.5; }
+    .empty-state p { margin-bottom: 20px; }
+    
+    /* 数据统计 */
+    .stats-bar { display: flex; gap: 24px; padding: 12px 24px; background: white; border-bottom: 1px solid #eee; }
+    .stat-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .stat-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .stat-dot.male { background: #87CEEB; }
+    .stat-dot.female { background: #FFB6C1; }
+    .stat-dot.deceased { background: #A9A9A9; }
+    .stat-num { font-weight: 600; color: #333; }
+    
+    /* 弹窗样式覆盖 */
+    .el-dialog { border-radius: 16px !important; }
+    .el-dialog__header { padding: 20px 24px !important; border-bottom: 1px solid #eee; }
+    .el-dialog__title { font-weight: 600 !important; }
+    .el-dialog__body { padding: 24px !important; }
+    .el-dialog__footer { padding: 16px 24px !important; border-top: 1px solid #eee; }
+    
+    /* 标签页样式 */
+    .panel-tabs { border-bottom: 1px solid #eee; display: flex; }
+    .panel-tab { flex: 1; padding: 14px; text-align: center; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; font-size: 14px; color: #666; }
+    .panel-tab:hover { color: #667eea; }
+    .panel-tab.active { color: #667eea; border-bottom-color: #667eea; }
+    
+    /* 菜单按钮组 */
+    .menu-group { display: flex; gap: 8px; flex-wrap: wrap; }
+    .menu-btn { padding: 8px 14px; border-radius: 6px; border: 1px solid #ddd; background: white; cursor: pointer; font-size: 13px; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
+    .menu-btn:hover { border-color: #667eea; color: #667eea; background: #f8f9ff; }
+    .menu-btn svg { width: 16px; height: 16px; }
+    
+    /* 导出按钮 */
+    .export-group { display: flex; gap: 8px; }
+  </style>
+</head>
+<body>
+  <div id="app" class="app-container">
+    <!-- 头部 -->
+    <header class="page-header">
+      <div class="logo">
+        <svg viewBox="0 0 36 36" fill="none">
+          <circle cx="12" cy="14" r="7" fill="white" opacity="0.9"/>
+          <circle cx="24" cy="14" r="7" fill="white" opacity="0.7"/>
+          <path d="M12 21v7c0 2.5 3.5 4.5 8 4.5s8-2 8-4.5v-7" stroke="white" stroke-width="2.5" fill="none" opacity="0.9"/>
+        </svg>
+        <span>亲戚关系</span>
+      </div>
+      
+      <div class="tips">点击任意节点探索关系，拖拽编辑布局，轻松管理</div>
+      
+      <nav class="nav">
+        <a href="#" :class="{active: currentView === 'graph'}" @click.prevent="currentView = 'graph'">关系图</a>
+        <a href="#" :class="{active: currentView === 'members'}" @click.prevent="currentView = 'members'">成员管理</a>
+        <a href="#" :class="{active: currentView === 'data'}" @click.prevent="currentView = 'data'">数据管理</a>
+      </nav>
+      
+      <div class="actions">
+        <button class="btn btn-primary" @click="showAddMemberDialog()">+ 添加成员</button>
+        <button class="btn btn-secondary" @click="showAddRelationDialog()">添加关系</button>
+      </div>
+    </header>
+    
+    <!-- 统计栏 -->
+    <div class="stats-bar">
+      <div class="stat-item"><span class="stat-dot male"></span>男性 <span class="stat-num">{{maleCount}}</span> 人</div>
+      <div class="stat-item"><span class="stat-dot female"></span>女性 <span class="stat-num">{{femaleCount}}</span> 人</div>
+      <div class="stat-item"><span class="stat-dot deceased"></span>已故 <span class="stat-num">{{deceasedCount}}</span> 人</div>
+      <div class="stat-item" style="margin-left: auto;">
+        <span style="color: #888; font-size: 12px;">数据存储在浏览器本地，清除浏览器数据会丢失，请定期导出备份</span>
+      </div>
+    </div>
+    
+    <!-- 主内容 -->
+    <main class="page-content">
+      <!-- 关系图视图 -->
+      <div v-if="currentView === 'graph'" class="graph-container">
+        <div class="graph-toolbar">
+          <button class="toolbar-btn" @click="zoomIn" title="放大">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M11 8v6M8 11h6"/></svg>
+          </button>
+          <button class="toolbar-btn" @click="zoomOut" title="缩小">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M8 11h6"/></svg>
+          </button>
+          <button class="toolbar-btn" @click="resetZoom" title="重置视图">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          </button>
+        </div>
+        
+        <svg ref="graphSvg" id="graph-svg"></svg>
+        
+        <!-- 空状态 -->
+        <div v-if="members.length === 0" class="empty-state" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="8" r="4"/><circle cx="4" cy="18" r="3"/><circle cx="20" cy="18" r="3"/>
+            <path d="M12 12v4M8 18v-3M16 18v-3"/>
+          </svg>
+          <p>暂无家族成员</p>
+          <button class="btn btn-primary" @click="showAddMemberDialog()">+ 添加第一个成员</button>
+        </div>
+      </div>
+      
+      <!-- 成员管理视图 -->
+      <div v-if="currentView === 'members'" style="flex: 1; padding: 24px; overflow-y: auto;">
+        <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+          <h2 style="font-size: 18px; color: #333;">家族成员 ({{members.length}})</h2>
+          <div class="menu-group">
+            <button class="menu-btn" @click="showAddMemberDialog()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              添加成员
+            </button>
+          </div>
+        </div>
+        
+        <div v-if="members.length === 0" class="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="8" r="4"/><circle cx="4" cy="18" r="3"/><circle cx="20" cy="18" r="3"/>
+            <path d="M12 12v4M8 18v-3M16 18v-3"/>
+          </svg>
+          <p>暂无家族成员</p>
+          <button class="btn btn-primary" @click="showAddMemberDialog()">+ 添加第一个成员</button>
+        </div>
+        
+        <div v-else class="members-list">
+          <div v-for="member in members" :key="member.id" class="member-card" @click="selectMember(member)">
+            <div class="avatar" :class="member.gender">{{ member.gender === 'male' ? '👨' : member.gender === 'female' ? '👩' : '❓' }}</div>
+            <div class="name">{{ member.name }}</div>
+            <div class="meta">
+              <span v-if="member.generation">第{{member.generation}}代</span>
+              <span v-if="member.branch"> · {{member.branch}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 数据管理视图 -->
+      <div v-if="currentView === 'data'" style="flex: 1; padding: 24px; overflow-y: auto;">
+        <h2 style="font-size: 18px; color: #333; margin-bottom: 24px;">数据管理</h2>
+        
+        <div style="max-width: 600px;">
+          <el-card style="margin-bottom: 20px;">
+            <template #header>
+              <div style="font-weight: 600;">导出数据</div>
+            </template>
+            <p style="color: #666; margin-bottom: 16px; font-size: 14px;">将当前所有家族成员和关系数据导出为 JSON 文件，用于备份或迁移。</p>
+            <div class="export-group">
+              <button class="btn btn-primary" @click="exportData">📥 导出 JSON</button>
+            </div>
+          </el-card>
+          
+          <el-card style="margin-bottom: 20px;">
+            <template #header>
+              <div style="font-weight: 600;">导入数据</div>
+            </template>
+            <p style="color: #666; margin-bottom: 16px; font-size: 14px;">从之前导出的 JSON 文件恢复数据。导入将覆盖现有数据。</p>
+            <input type="file" ref="fileInput" accept=".json" @change="importData" style="display: none;">
+            <button class="btn btn-secondary" @click="$refs.fileInput.click()">📤 导入 JSON</button>
+          </el-card>
+          
+          <el-card>
+            <template #header>
+              <div style="font-weight: 600; color: #ff4757;">危险操作</div>
+            </template>
+            <p style="color: #666; margin-bottom: 16px; font-size: 14px;">清空所有数据，此操作不可恢复！</p>
+            <button class="btn btn-danger" @click="clearAllData">🗑 清空所有数据</button>
+          </el-card>
+        </div>
+      </div>
+      
+      <!-- 侧边面板 -->
+      <aside v-if="selectedMember" class="side-panel">
+        <div class="panel-tabs">
+          <div class="panel-tab" :class="{active: sideTab === 'info'}" @click="sideTab = 'info'">基本信息</div>
+          <div class="panel-tab" :class="{active: sideTab === 'relation'}" @click="sideTab = 'relation'">关系 ({{getMemberRelations(selectedMember.id).length}})</div>
+        </div>
+        
+        <div class="panel-header">
+          <h3>{{ sideTab === 'info' ? '成员详情' : '关系列表' }}</h3>
+          <button class="panel-close" @click="selectedMember = null">✕</button>
+        </div>
+        
+        <div class="panel-content">
+          <!-- 基本信息 -->
+          <div v-if="sideTab === 'info'">
+            <div class="member-avatar" :class="selectedMember.gender">
+              {{ selectedMember.gender === 'male' ? '👨' : selectedMember.gender === 'female' ? '👩' : '❓' }}
+            </div>
+            <div class="member-name">{{ selectedMember.name }}</div>
+            
+            <dl class="member-info" style="margin-top: 20px;">
+              <dt>性别</dt>
+              <dd>{{ selectedMember.gender === 'male' ? '男' : selectedMember.gender === 'female' ? '女' : '未知' }}</dd>
+              
+              <dt>辈分</dt>
+              <dd>{{ selectedMember.generation ? '第 ' + selectedMember.generation + ' 代' : '未设置' }}</dd>
+              
+              <dt>分支</dt>
+              <dd>{{ selectedMember.branch || '主支' }}</dd>
+              
+              <dt>出生</dt>
+              <dd>{{ selectedMember.birthDate || '未知' }}</dd>
+              
+              <dt>状态</dt>
+              <dd>{{ selectedMember.isDeceased ? '已故' : '在世' }}</dd>
+              
+              <dt v-if="selectedMember.bio">简介</dt>
+              <dd v-if="selectedMember.bio">{{ selectedMember.bio }}</dd>
+            </dl>
+            
+            <div style="margin-top: 24px; display: flex; gap: 8px;">
+              <button class="btn btn-secondary" style="flex: 1;" @click="editMember(selectedMember)">✏️ 编辑</button>
+              <button class="btn btn-danger" style="flex: 1;" @click="deleteMember(selectedMember)">🗑 删除</button>
+            </div>
+          </div>
+          
+          <!-- 关系列表 -->
+          <div v-if="sideTab === 'relation'">
+            <div v-if="getMemberRelations(selectedMember.id).length === 0" class="empty-state" style="padding: 40px 20px;">
+              <p>暂无关系记录</p>
+              <button class="btn btn-secondary" @click="showAddRelationDialog(selectedMember)">添加关系</button>
+            </div>
+            
+            <div v-else>
+              <div v-for="rel in getMemberRelations(selectedMember.id)" :key="rel.id" class="relation-item" @click="selectMemberById(rel.targetId)">
+                <div class="relation-avatar" :class="rel.targetGender">
+                  {{ rel.targetGender === 'male' ? '👨' : rel.targetGender === 'female' ? '👩' : '❓' }}
+                </div>
+                <div class="relation-info">
+                  <div class="relation-name">{{ rel.targetName }}</div>
+                  <div class="relation-type">{{ rel.label }}</div>
+                </div>
+              </div>
+              
+              <button class="btn btn-secondary" style="width: 100%; margin-top: 16px;" @click="showAddRelationDialog(selectedMember)">+ 添加关系</button>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+    
+    <!-- 添加成员弹窗 -->
+    <el-dialog v-model="showAddMember" :title="editingMember ? '编辑成员' : '添加成员'" width="480px" :close-on-click-modal="false">
+      <el-form label-position="top">
+        <el-form-item label="姓名" required>
+          <el-input v-model="memberForm.name" placeholder="请输入成员姓名" maxlength="20"/>
+        </el-form-item>
+        
+        <el-form-item label="性别" required>
+          <el-radio-group v-model="memberForm.gender">
+            <el-radio label="male">👨 男</el-radio>
+            <el-radio label="female">👩 女</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        
+        <div class="form-row">
+          <el-form-item label="出生日期">
+            <el-date-picker v-model="memberForm.birthDate" type="date" placeholder="选择日期" style="width: 100%;" value-format="YYYY-MM-DD"/>
+          </el-form-item>
+          <el-form-item label="辈分（第几代）">
+            <el-input-number v-model="memberForm.generation" :min="1" :max="20" style="width: 100%;"/>
+          </el-form-item>
+        </div>
+        
+        <div class="form-row">
+          <el-form-item label="分支">
+            <el-input v-model="memberForm.branch" placeholder="如：主支/长房/次房" maxlength="20"/>
+          </el-form-item>
+          <el-form-item label="是否已故">
+            <el-switch v-model="memberForm.isDeceased" active-text="是" inactive-text="否"/>
+          </el-form-item>
+        </div>
+        
+        <el-form-item label="个人简介">
+          <el-input v-model="memberForm.bio" type="textarea" :rows="2" placeholder="可选，简要描述此成员"/>
+        </el-form-item>
+      </el-form>
+      
+      <template #footer>
+        <el-button @click="showAddMember = false">取消</el-button>
+        <el-button type="primary" @click="saveMember" :loading="saving">保存</el-button>
+      </template>
+    </el-dialog>
+    
+    <!-- 添加关系弹窗 -->
+    <el-dialog v-model="showAddRelation" title="添加关系" width="480px" :close-on-click-modal="false">
+      <el-form label-position="top">
+        <el-form-item label="从成员">
+          <el-select v-model="relationForm.fromId" placeholder="选择成员" style="width: 100%;">
+            <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id"/>
+          </el-select>
+        </el-form-item>
+        
+        <el-form-item label="关系类型">
+          <el-select v-model="relationForm.type" placeholder="选择关系" style="width: 100%;">
+            <el-option-group label="血缘关系">
+              <el-option value="father" label="👨 父亲"/>
+              <el-option value="mother" label="👩 母亲"/>
+              <el-option value="son" label="👦 儿子"/>
+              <el-option value="daughter" label="👧 女儿"/>
+              <el-option value="brother" label="👦 兄弟"/>
+              <el-option value="sister" label="👧 姐妹"/>
+              <el-option value="grandfather" label="👴 祖父"/>
+              <el-option value="grandmother" label="👵 祖母"/>
+              <el-option value="grandson" label="👶 孙子"/>
+              <el-option value="granddaughter" label="👶 孙女"/>
+            </el-option-group>
+            <el-option-group label="姻亲关系">
+              <el-option value="husband" label="💑 丈夫"/>
+              <el-option value="wife" label="💑 妻子"/>
+              <el-option value="father_in_law" label="👨 岳父/公公"/>
+              <el-option value="mother_in_law" label="👩 岳母/婆婆"/>
+              <el-option value="son_in_law" label="👨 女婿"/>
+              <el-option value="daughter_in_law" label="👩 儿媳"/>
+            </el-option-group>
+          </el-select>
+        </el-form-item>
+        
+        <el-form-item label="到成员">
+          <el-select v-model="relationForm.toId" placeholder="选择成员" style="width: 100%;">
+            <el-option v-for="m in members.filter(x => x.id !== relationForm.fromId)" :key="m.id" :label="m.name" :value="m.id"/>
+          </el-select>
+        </el-form-item>
+        
+        <el-form-item label="关系说明（可选）">
+          <el-input v-model="relationForm.label" placeholder="如：继父、干爹等"/>
+        </el-form-item>
+      </el-form>
+      
+      <template #footer>
+        <el-button @click="showAddRelation = false">取消</el-button>
+        <el-button type="primary" @click="saveRelation" :loading="saving">保存</el-button>
+      </template>
+    </el-dialog>
+  </div>
+
+  <script>
+    const { createApp, ref, computed, watch, onMounted, nextTick } = Vue;
+    
+    const app = createApp({
+      setup() {
+        // 数据
+        const members = ref([]);
+        const relationships = ref([]);
+        const selectedMember = ref(null);
+        const currentView = ref('graph');
+        const sideTab = ref('info');
+        const graphSvg = ref(null);
+        
+        // 弹窗状态
+        const showAddMember = ref(false);
+        const showAddRelation = ref(false);
+        const editingMember = ref(null);
+        const saving = ref(false);
+        
+        // 表单数据
+        const memberForm = ref({
+          name: '', gender: 'male', birthDate: '', generation: 1, branch: '主支', isDeceased: false, bio: ''
+        });
+        
+        const relationForm = ref({
+          fromId: '', toId: '', type: 'father', label: ''
+        });
+        
+        // D3 相关
+        let svg = null;
+        let simulation = null;
+        let zoomBehavior = null;
+        let currentTransform = d3.zoomIdentity;
+        
+        // 关系标签映射
+        const relationLabels = {
+          father: '父亲', mother: '母亲', son: '儿子', daughter: '女儿',
+          brother: '兄弟', sister: '姐妹', husband: '丈夫', wife: '妻子',
+          grandfather: '祖父', grandmother: '祖母', grandson: '孙子', granddaughter: '孙女',
+          father_in_law: '岳父/公公', mother_in_law: '岳母/婆婆',
+          son_in_law: '女婿', daughter_in_law: '儿媳'
+        };
+        
+        // 反向关系映射
+        const reverseRelations = {
+          father: { son: '女儿', daughter: '女儿' },
+          mother: { son: '儿子', daughter: '女儿' },
+          son: { father: '父亲', mother: '母亲' },
+          daughter: { father: '父亲', mother: '母亲' },
+          brother: { brother: '兄弟', sister: '姐妹' },
+          sister: { brother: '兄弟', sister: '姐妹' },
+          husband: { wife: '妻子' },
+          wife: { husband: '丈夫' },
+          grandfather: { grandson: '孙子', granddaughter: '孙女' },
+          grandmother: { grandson: '孙子', granddaughter: '孙女' },
+          grandson: { grandfather: '祖父', grandmother: '祖母' },
+          granddaughter: { grandfather: '祖父', grandmother: '祖母' },
+          father_in_law: { son_in_law: '女婿', daughter_in_law: '儿媳' },
+          mother_in_law: { son_in_law: '女婿', daughter_in_law: '儿媳' },
+          son_in_law: { father_in_law: '岳父/公公', mother_in_law: '岳母/婆婆' },
+          daughter_in_law: { father_in_law: '岳父/公公', mother_in_law: '岳母/婆婆' }
+        };
+        
+        // 计算属性
+        const maleCount = computed(() => members.value.filter(m => m.gender === 'male').length);
+        const femaleCount = computed(() => members.value.filter(m => m.gender === 'female').length);
+        const deceasedCount = computed(() => members.value.filter(m => m.isDeceased).length);
+        
+        // 生成唯一ID
+        function generateId() {
+          return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+        }
+        
+        // LocalStorage 操作
+        function saveToStorage() {
+          localStorage.setItem('family_members', JSON.stringify(members.value));
+          localStorage.setItem('family_relations', JSON.stringify(relationships.value));
+        }
+        
+        function loadFromStorage() {
+          const storedMembers = localStorage.getItem('family_members');
+          const storedRelations = localStorage.getItem('family_relations');
+          if (storedMembers) members.value = JSON.parse(storedMembers);
+          if (storedRelations) relationships.value = JSON.parse(storedRelations);
+        }
+        
+        // 成员操作
+        function showAddMemberDialog(member = null) {
+          editingMember.value = member;
+          if (member) {
+            memberForm.value = {
+              name: member.name,
+              gender: member.gender,
+              birthDate: member.birthDate || '',
+              generation: member.generation || 1,
+              branch: member.branch || '主支',
+              isDeceased: member.isDeceased || false,
+              bio: member.bio || ''
+            };
+          } else {
+            memberForm.value = {
+              name: '', gender: 'male', birthDate: '', generation: 1, branch: '主支', isDeceased: false, bio: ''
+            };
+          }
+          showAddMember.value = true;
+        }
+        
+        function editMember(member) {
+          showAddMemberDialog(member);
+        }
+        
+        function saveMember() {
+          if (!memberForm.value.name.trim()) {
+            ElementPlus.ElMessage.warning('请输入成员姓名');
+            return;
+          }
+          
+          saving.value = true;
+          
+          try {
+            if (editingMember.value) {
+              // 更新
+              const index = members.value.findIndex(m => m.id === editingMember.value.id);
+              if (index !== -1) {
+                members.value[index] = {
+                  ...members.value[index],
+                  ...memberForm.value,
+                  birthDate: memberForm.value.birthDate || null
+                };
+              }
+              ElementPlus.ElMessage.success('更新成功');
+            } else {
+              // 新增
+              const newMember = {
+                id: generateId(),
+                ...memberForm.value,
+                birthDate: memberForm.value.birthDate || null,
+                createdAt: new Date().toISOString()
+              };
+              members.value.push(newMember);
+              ElementPlus.ElMessage.success('添加成功');
+            }
+            
+            saveToStorage();
+            showAddMember.value = false;
+            updateGraph();
+          } catch (e) {
+            ElementPlus.ElMessage.error('保存失败');
+          } finally {
+            saving.value = false;
+          }
+        }
+        
+        function deleteMember(member) {
+          ElementPlus.ElMessageBox.confirm(
+            `确定要删除成员"${member.name}"吗？此操作将同时删除与其相关的所有关系。`,
+            '确认删除',
+            { type: 'warning' }
+          ).then(() => {
+            // 删除成员
+            members.value = members.value.filter(m => m.id !== member.id);
+            // 删除相关关系
+            relationships.value = relationships.value.filter(
+              r => r.fromId !== member.id && r.toId !== member.id
+            );
+            // 如果选中的是被删除的成员，清除选中
+            if (selectedMember.value?.id === member.id) {
+              selectedMember.value = null;
+            }
+            saveToStorage();
+            updateGraph();
+            ElementPlus.ElMessage.success('删除成功');
+          }).catch(() => {});
+        }
+        
+        function selectMember(member) {
+          selectedMember.value = member;
+          currentView.value = 'graph';
+        }
+        
+        function selectMemberById(id) {
+          const member = members.value.find(m => m.id === id);
+          if (member) selectMember(member);
+        }
+        
+        // 关系操作
+        function showAddRelationDialog(member = null) {
+          relationForm.value = {
+            fromId: member?.id || '',
+            toId: '',
+            type: 'father',
+            label: ''
+          };
+          showAddRelation.value = true;
+        }
+        
+        function saveRelation() {
+          if (!relationForm.value.fromId || !relationForm.value.toId) {
+            ElementPlus.ElMessage.warning('请选择两个成员');
+            return;
+          }
+          
+          if (relationForm.value.fromId === relationForm.value.toId) {
+            ElementPlus.ElMessage.warning('不能与自己建立关系');
+            return;
+          }
+          
+          // 检查是否已存在关系
+          const exists = relationships.value.some(
+            r => r.fromId === relationForm.value.fromId && 
+                 r.toId === relationForm.value.toId &&
+                 r.type === relationForm.value.type
+          );
+          
+          if (exists) {
+            ElementPlus.ElMessage.warning('该关系已存在');
+            return;
+          }
+          
+          saving.value = true;
+          
+          try {
+            const label = relationForm.value.label || relationLabels[relationForm.value.type] || relationForm.value.type;
+            
+            // 添加正向关系
+            relationships.value.push({
+              id: generateId(),
+              fromId: relationForm.value.fromId,
+              toId: relationForm.value.toId,
+              type: relationForm.value.type,
+              label: label
+            });
+            
+            // 自动添加反向关系
+            const reverseType = Object.keys(reverseRelations[relationForm.value.type] || {})[0];
+            if (reverseType) {
+              const reverseLabel = reverseRelations[relationForm.value.type][reverseType];
+              // 检查反向关系是否已存在
+              const reverseExists = relationships.value.some(
+                r => r.fromId === relationForm.value.toId && 
+                     r.toId === relationForm.value.fromId &&
+                     r.type === reverseType
+              );
+              
+              if (!reverseExists) {
+                relationships.value.push({
+                  id: generateId(),
+                  fromId: relationForm.value.toId,
+                  toId: relationForm.value.fromId,
+                  type: reverseType,
+                  label: reverseLabel
+                });
+              }
+            }
+            
+            saveToStorage();
+            showAddRelation.value = false;
+            updateGraph();
+            
+            // 更新选中成员的关系显示
+            if (selectedMember.value) {
+              sideTab.value = 'relation';
+            }
+            
+            ElementPlus.ElMessage.success('关系添加成功');
+          } catch (e) {
+            ElementPlus.ElMessage.error('添加失败');
+          } finally {
+            saving.value = false;
+          }
+        }
+        
+        function getMemberRelations(memberId) {
+          return relationships.value
+            .filter(r => r.fromId === memberId)
+            .map(r => {
+              const target = members.value.find(m => m.id === r.toId);
+              return {
+                id: r.id,
+                targetId: r.toId,
+                targetName: target?.name || '未知',
+                targetGender: target?.gender || 'unknown',
+                type: r.type,
+                label: r.label
+              };
+            });
+        }
+        
+        // 图表操作
+        function initGraph() {
+          const container = document.getElementById('graph-svg');
+          if (!container) return;
+          
+          const width = container.clientWidth;
+          const height = container.clientHeight;
+          
+          // 清空
+          d3.select(container).selectAll('*').remove();
+          
+          svg = d3.select(container)
+            .append('svg')
+            .attr('width', '100%')
+            .attr('height', '100%')
+            .attr('viewBox', `0 0 ${width} ${height}`);
+          
+          // 缩放
+          zoomBehavior = d3.zoom()
+            .scaleExtent([0.1, 4])
+            .on('zoom', (event) => {
+              svg.select('g.graph-container').attr('transform', event.transform);
+              currentTransform = event.transform;
+            });
+          
+          svg.call(zoomBehavior);
+          svg.append('g').attr('class', 'graph-container');
+          svg.select('g.graph-container').append('g').attr('class', 'links');
+          svg.select('g.graph-container').append('g').attr('class', 'nodes');
+          svg.select('g.graph-container').append('g').attr('class', 'labels');
+          
+          // 力导向模拟
+          simulation = d3.forceSimulation()
+            .force('link', d3.forceLink().id(d => d.id).distance(150))
+            .force('charge', d3.forceManyBody().strength(-400))
+            .force('center', d3.forceCenter(width / 2, height / 2))
+            .force('collision', d3.forceCollide().radius(45));
+          
+          updateGraph();
+        }
+        
+        function updateGraph() {
+          if (!svg || !simulation) return;
+          
+          const nodes = members.value.map(m => ({ ...m }));
+          const links = relationships.value.map(r => ({
+            ...r,
+            source: r.fromId,
+            target: r.toId
+          }));
+          
+          // 连线
+          const linkSel = svg.select('g.links')
+            .selectAll('line')
+            .data(links, d => `${d.source}-${d.target}`);
+          
+          linkSel.exit().remove();
+          linkSel.enter().append('line')
+            .attr('class', 'relationship-link');
+          
+          // 节点
+          const nodeSel = svg.select('g.nodes')
+            .selectAll('g.graph-node')
+            .data(nodes, d => d.id);
+          
+          nodeSel.exit().remove();
+          
+          const nodeEnter = nodeSel.enter()
+            .append('g')
+            .attr('class', d => `graph-node ${d.gender} ${d.isDeceased ? 'deceased' : ''}`)
+            .call(d3.drag()
+              .on('start', dragStarted)
+              .on('drag', dragged)
+              .on('end', dragEnded)
+            )
+            .on('click', (event, d) => {
+              event.stopPropagation();
+              selectMember(d);
+            });
+          
+          nodeEnter.append('circle').attr('r', 35);
+          nodeEnter.append('text')
+            .attr('dy', '0.35em')
+            .attr('text-anchor', 'middle')
+            .text(d => d.name.length > 4 ? d.name.slice(0, 4) + '..' : d.name);
+          
+          const allNodes = nodeEnter.merge(nodeSel);
+          
+          // 恢复位置
+          allNodes.each(function(d) {
+            const existing = nodes.find(n => n.id === d.id && n.x !== undefined);
+            if (existing) {
+              d.x = existing.x;
+              d.y = existing.y;
+            }
+          });
+          
+          // 更新模拟
+          simulation.nodes(nodes);
+          simulation.force('link').links(links);
+          
+          simulation.on('tick', () => {
+            svg.select('g.links').selectAll('line')
+              .attr('x1', d => d.source.x || 0)
+              .attr('y1', d => d.source.y || 0)
+              .attr('x2', d => d.target.x || 0)
+              .attr('y2', d => d.target.y || 0);
+            
+            allNodes.attr('transform', d => `translate(${d.x || 0},${d.y || 0})`);
+          });
+        }
+        
+        function dragStarted(event, d) {
+          if (!event.active) simulation.alphaTarget(0.3).restart();
+          d.fx = d.x;
+          d.fy = d.y;
+        }
+        
+        function dragged(event, d) {
+          d.fx = event.x;
+          d.fy = event.y;
+        }
+        
+        function dragEnded(event, d) {
+          if (!event.active) simulation.alphaTarget(0);
+          d.fx = null;
+          d.fy = null;
+          // 保存位置到成员数据
+          const member = members.value.find(m => m.id === d.id);
+          if (member) {
+            member.x = d.x;
+            member.y = d.y;
+            saveToStorage();
+          }
+        }
+        
+        function zoomIn() {
+          svg.transition().call(zoomBehavior.scaleBy, 1.3);
+        }
+        
+        function zoomOut() {
+          svg.transition().call(zoomBehavior.scaleBy, 0.7);
+        }
+        
+        function resetZoom() {
+          svg.transition().call(zoomBehavior.transform, d3.zoomIdentity);
+        }
+        
+        // 数据导入导出
+        function exportData() {
+          const data = {
+            version: '1.0',
+            exportTime: new Date().toISOString(),
+            members: members.value,
+            relationships: relationships.value
+          };
+          
+          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `family_tree_${new Date().toISOString().slice(0,10)}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+          
+          ElementPlus.ElMessage.success('导出成功');
+        }
+        
+        function importData(event) {
+          const file = event.target.files[0];
+          if (!file) return;
+          
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            try {
+              const data = JSON.parse(e.target.result);
+              if (data.members && data.relationships) {
+                ElementPlus.ElMessageBox.confirm(
+                  '导入将覆盖现有数据，是否继续？',
+                  '确认导入',
+                  { type: 'warning' }
+                ).then(() => {
+                  members.value = data.members;
+                  relationships.value = data.relationships;
+                  saveToStorage();
+                  updateGraph();
+                  ElementPlus.ElMessage.success(`成功导入 ${members.value.length} 个成员和 ${relationships.value.length} 条关系`);
+                }).catch(() => {});
+              } else {
+                ElementPlus.ElMessage.error('文件格式不正确');
+              }
+            } catch (err) {
+              ElementPlus.ElMessage.error('文件解析失败');
+            }
+          };
+          reader.readAsText(file);
+          event.target.value = '';
+        }
+        
+        function clearAllData() {
+          ElementPlus.ElMessageBox.confirm(
+            '确定要清空所有数据吗？此操作不可恢复！',
+            '危险操作',
+            { type: 'warning', confirmButtonText: '确定清空' }
+          ).then(() => {
+            members.value = [];
+            relationships.value = [];
+            selectedMember.value = null;
+            localStorage.removeItem('family_members');
+            localStorage.removeItem('family_relations');
+            updateGraph();
+            ElementPlus.ElMessage.success('数据已清空');
+          }).catch(() => {});
+        }
+        
+        // 生命周期
+        onMounted(() => {
+          loadFromStorage();
+          nextTick(() => {
+            initGraph();
+            window.addEventListener('resize', () => {
+              if (graphSvg.value) initGraph();
+            });
+          });
+        });
+        
+        // 监听视图变化
+        watch(currentView, (val) => {
+          if (val === 'graph') {
+            nextTick(() => {
+              if (!svg) initGraph();
+              else updateGraph();
+            });
+          }
+        });
+        
+        return {
+          // 数据
+          members,
+          relationships,
+          selectedMember,
+          currentView,
+          sideTab,
+          graphSvg,
+          
+          // 弹窗
+          showAddMember,
+          showAddRelation,
+          editingMember,
+          saving,
+          
+          // 表单
+          memberForm,
+          relationForm,
+          
+          // 计算属性
+          maleCount,
+          femaleCount,
+          deceasedCount,
+          
+          // 方法
+          showAddMemberDialog,
+          editMember,
+          saveMember,
+          deleteMember,
+          selectMember,
+          selectMemberById,
+          showAddRelationDialog,
+          saveRelation,
+          getMemberRelations,
+          
+          // 图表
+          zoomIn,
+          zoomOut,
+          resetZoom,
+          
+          // 数据管理
+          exportData,
+          importData,
+          clearAllData
+        };
+      }
+    });
+    
+    app.use(ElementPlus);
+    app.mount('#app');
+  </script>
+</body>
+</html>
